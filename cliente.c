@@ -1,5 +1,11 @@
+#include "chat.h"
 #include "socket_helper.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+#define MAX_PLAYERS 10
 
 void printIntro() {
   printf("Bem vindo ao jogo da forca!\n");
@@ -10,13 +16,115 @@ void printIntro() {
   printf("4) sair.\n");
 }
 
-void play_multiplayer() {
+void ask_executor_privileges(int connfd)
+{
+    char command[100], buffer[100], line[255];
+    bzero(command, sizeof(command));
+    snprintf(command, 100, "2");
+    send(connfd, command, strlen(command), 0);
 
+    bzero(line, sizeof(line));
+    recv(connfd, buffer, sizeof(buffer), 0);
+    strcat(line, buffer);
+    while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
+        strcat(line, buffer);
+    }
+
+    printf("Linha recebida: %s\n", line);
+}
+
+void play_singleplayer(int connfd)
+{
+    char buffer[100], line[255];
+    int n, vidas = 1, letras, letras_restantes;
+
+    // sends to server game mode identifier
+    bzero(buffer, sizeof(buffer));
+    snprintf(buffer, 2, "1");
+    send(connfd, buffer, 1, 0);
+
+    // first byte sent by server is word length
+    read(connfd, buffer, 1);
+    letras = buffer[0];
+    letras_restantes = letras;
+    while (letras_restantes > 0 && vidas > 0) {
+        // second byte is lives count
+        read(connfd, buffer, 1);
+        vidas = buffer[0];
+        printf("A partida de jogo da forca começou!\nVocê possui %d vidas.\nA palavra possui %d letras.\n\n", vidas, letras);
+        
+        bzero(line, sizeof(line));
+        // remainder of stream is message from server, including word with guesses hits.
+        recv(connfd, buffer, sizeof(buffer), 0);
+        strcat(line, buffer);
+        while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
+            strcat(line, buffer);
+        }
+        printf("%s", line);
+        printf("\nDigite seu palpite (letra ou palavra): ");
+        scanf("%s", buffer);
+        send(connfd, buffer, strlen(buffer), 0);
+        read(connfd, buffer, 1);
+        letras_restantes = buffer[0];
+    }
+
+    printf("Saiu com %d vidas e %d letras restantes\n", vidas, letras_restantes);
+
+    if (letras_restantes <= 0) {
+        // reads control bytes and show message from server.
+        read(connfd, buffer, 1);
+        n = read(connfd, buffer, sizeof(buffer));
+        buffer[n] = 0;
+        printf("%s", buffer);
+        while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) > 0) {
+            buffer[n] = 0;
+            printf("%s", buffer);
+        }
+    }
+
+    printf("\n\n");
+}
+
+void play_multiplayer(int connfd)
+{
+    Chat game_chat;
+    char buffer[100], line[255];
+    char * name, * ip, * port;
+    int i, user_count;
+
+    printf("Digite o seu nome:");
+    scanf(" %s", buffer);
+    game_chat = chat_setup(MAX_PLAYERS, buffer);
+
+    // sends to server this client chat identificaion.
+    bzero(buffer, sizeof(buffer));
+    snprintf(buffer, 100, "3\n%s\n%d\n", game_chat.username, game_chat.read_port);
+    send(connfd, buffer, strlen(buffer), 0);
+
+    printf("Aguardando inicio da partida...");
+    read(connfd, buffer, 1);
+    buffer[1] = 0;
+    user_count = atoi(buffer);
+
+    bzero(line, sizeof(line));
+    while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
+        strcat(line, buffer);
+    }
+    
+    ip = strtok(line, " ");
+    for (i = 0; i < user_count; i++) {
+        name = strtok(NULL, " ");
+        port = strtok(NULL, " ");
+        chat_add_user(game_chat, name, ip, atoi(port));
+        ip = strtok(NULL, " ");
+    }
+
+    printf("Fim de jogo!\n");
 }
 
 int main(int argc, char **argv) {
-    int connfd, option;
-    char error[300], command[100];
+    int connfd;
+    char error[300], option;
     struct sockaddr_in servaddr;
 
     if (argc != 2) {
@@ -29,23 +137,30 @@ int main(int argc, char **argv) {
 
     connfd = Socket(AF_INET, SOCK_STREAM, 0);
 
-    servaddr = ClientSockaddrIn(AF_INET, argv[1], 9100);
+    servaddr = ClientSockaddrIn(AF_INET, argv[1], 9000);
 
     Connect(connfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
-        
+
     option = '0';
     while (option != '4') {
         printIntro();
         printf("Digite sua escolha:");
-        option = getchar();
+        scanf(" %c", &option);
 
         switch (option) {
+            case '1':
+                play_singleplayer(connfd);
+                break;
+            case '2':
+                ask_executor_privileges(connfd);
+                break;
             case '3':
-                send(connfd, "Hello world!", 12, NULL);
-                play_multiplayer();
+                play_multiplayer(connfd);
                 break;
         }
     }
+
+    close(connfd);
 
     return 0;
 }
