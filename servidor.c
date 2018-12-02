@@ -97,7 +97,7 @@ void processa_tentativa(Player *player, char *command)
 {
   int i, tiles_left, new_guess;
   char buffer[255], guess, guess_hits = 0;
-  
+
   new_guess = 1;
   if (player->game->hits < strlen(player->game->word)) {
     if (strlen(command) == 1) {
@@ -186,18 +186,48 @@ Game* create_mp_game() {
   return game;
 }
 
+char **load_dictionary(){
+  char **dict;
+  char *line;
+  int word_count;
+  size_t len = 0;
+  ssize_t read;
+  FILE *file;
+  file = fopen("dictionary.txt", "r");
+  while ((read = getline(&line, &len, file)) != -1) word_count++;
+
+  dict = malloc(word_count * sizeof(char*));
+
+  word_count = 0;
+  
+  file = fopen("dictionary.txt", "r");
+  while ((read = getline(&line, &len, file)) != -1 && word_count < 50) {
+      dict[word_count] = malloc(255 * sizeof(char));
+      strcpy(dict[word_count++], line);
+      printf("Dicts: %s\n", dict[0]);
+  }
+
+  return dict;
+}
+
 int main(int argc, char **argv) {
     Player *clientes[FD_SETSIZE];
     Game *curr_game, *open_mp_game;
     struct sockaddr_in servaddr, cliinfo;
+    struct timeval tv;
     socklen_t cliinfo_len;
     int word_size, maxfd, listenfd, connfd, option=1, port=9000;
     int n, curr_fd, total_clients, lobby_size;
     char buffer[MAXDATASIZE];
-    char *words[] = {"batata", "sockets"};
+    char **words = load_dictionary();
+    printf("Words: %s\n", words[0]);
     fd_set active_set, read_set;
     time_t timer;
-    
+
+    load_dictionary();
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
 
     bzero(clientes, sizeof(clientes));
 
@@ -212,12 +242,13 @@ int main(int argc, char **argv) {
     /* Zeramos o set e marcamos o socket nele */
     FD_ZERO(&read_set);
     FD_SET(listenfd, &read_set);
-    maxfd = listenfd; 
+    maxfd = listenfd;
     total_clients = 0;
     open_mp_game = NULL;
 
     printf("Booting server.\n");
     while(1){
+
       if (open_mp_game == NULL) {
         printf("Opening new multiplayer game\n");
         open_mp_game = create_mp_game();
@@ -225,19 +256,21 @@ int main(int argc, char **argv) {
         timer = clock();
       }
 
-      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > 10.0 || lobby_size >= 2)) {
+      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > 20.0 || lobby_size >= 2)) {
         if (lobby_size > 1) {
           printf("Current multiplayer game starting.\n");
           start_multi_player_game();
 
           open_mp_game = NULL;
         }
-          
+
         timer = clock();
       }
 
+      if( (clock() - timer)/CLOCKS_PER_SEC > 10 ) timer = clock();
+
       active_set = read_set;
-      select(maxfd + 1, &active_set, NULL, NULL, NULL);
+      select(maxfd + 1, &active_set, NULL, NULL, &tv);
 
       /* So chamamos accept se houver uma solicitacao de conexao */
       for (curr_fd = 0; curr_fd <= maxfd; curr_fd++) {
@@ -265,7 +298,7 @@ int main(int argc, char **argv) {
               clientes[curr_fd] = NULL;
               continue;
             }
-          
+
             switch (clientes[curr_fd]->state) {
               case PLAYER_ON_LOBBY:
                 bzero(buffer, sizeof(buffer));
