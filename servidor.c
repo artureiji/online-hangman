@@ -26,6 +26,7 @@ typedef struct Player {
   enum STATE { PLAYER_ON_LOBBY, PLAYER_INGAME_MP, PLAYER_INGAME_SP } state;
   int games_count;
   int lives;
+  int misses;
   char used_words[MAXPLAYS][MAXWORDSIZE];
   Game *game;
 } Player;
@@ -77,52 +78,83 @@ void start_single_player_game(char** words, int word_count, Player *player)
   player->games_count++;
 
   player->lives = 6;
+  player->misses = 0;
 }
 
 void processa_tentativa(Player *player, char *command)
 {
-  int i, tiles_left;
+  int i, tiles_left, new_guess;
   char buffer[255], guess, guess_hits = 0;
   
+  new_guess = 1;
   if (strlen(command) == 1) {
     guess = toupper(command[0]);
 
-    player->game->guesses[player->game->guess_count] = guess;
-    player->game->guess_count++;
-    for (i = 0; i < strlen(player->game->word); i++) {
-      if (toupper(command[0]) == toupper(player->game->word[i])) {
-        player->game->guess_state[2 * i] = toupper(player->game->word[i]);
-        player->game->hits++;
-        guess_hits++;
+    for (i = 0; i < player->game->guess_count; i++) {
+      if (guess == player->game->guesses[i]) {
+        new_guess = 0;
       }
     }
 
-    if (guess_hits == 0) {
-      player->lives--;
+    if (new_guess) {
+      player->game->guesses[player->game->guess_count] = guess;
+      player->game->guess_count++;
+      for (i = 0; i < strlen(player->game->word); i++) {
+        if (toupper(command[0]) == toupper(player->game->word[i])) {
+          player->game->guess_state[2 * i] = toupper(player->game->word[i]);
+          player->game->hits++;
+          guess_hits++;
+        }
+      }
+
+      if (guess_hits == 0) {
+        player->lives--;
+        player->misses++;
+      }
     }
-
-    tiles_left = strlen(player->game->word) - player->game->hits;
-    write(player->connfd, &tiles_left, 1);
-    write(player->connfd, &player->lives, 1);
-    write(player->connfd, player->game->guess_state, strlen(player->game->guess_state));
-
-    if (tiles_left <= 0) {
-        snprintf(buffer, sizeof(buffer), "\nParabéns, você adivinhou a palavra '%s'.\n", player->game->word);
-        write(player->connfd, buffer, strlen(buffer));
-        bzero(buffer, sizeof(buffer));
-
-        player->state = PLAYER_ON_LOBBY;
+  } else {
+    if (strcasecmp(command, player->game->word) == 0) {
+      player->game->hits = strlen(player->game->word);
+    } else {
+      player->lives = 0;
+      player->misses++;
     }
+  }
 
-    return;
+  tiles_left = strlen(player->game->word) - player->game->hits;
+  write(player->connfd, &tiles_left, 1);
+  write(player->connfd, &player->lives, 1);
+  write(player->connfd, player->game->guess_state, strlen(player->game->guess_state));
+
+  if (tiles_left <= 0) {
+      snprintf(buffer, sizeof(buffer), "\nParabéns, você adivinhou a palavra '%s'.\n", player->game->word);
+      write(player->connfd, buffer, strlen(buffer));
+      bzero(buffer, sizeof(buffer));
+
+      player->state = PLAYER_ON_LOBBY;
+  } else if (player->lives <= 0) {
+      snprintf(buffer, sizeof(buffer), "\nForca!, você fez %d tentativas incorretas...\n", player->misses);
+      write(player->connfd, buffer, strlen(buffer));
+      bzero(buffer, sizeof(buffer));
+      snprintf(buffer, sizeof(buffer), "\nA palavra correta era '%s', você perdeu!\n", player->game->word);
+      write(player->connfd, buffer, strlen(buffer));
+      bzero(buffer, sizeof(buffer));
+
+      player->state = PLAYER_ON_LOBBY;
+  } else if (!new_guess) {
+    snprintf(buffer, sizeof(buffer), "\nA letra '%c' já foi utilizada.\n", command[0]);
+    write(player->connfd, buffer, strlen(buffer));
+    bzero(buffer, sizeof(buffer));
+  } else if (guess_hits <= 0) {
+    snprintf(buffer, sizeof(buffer), "\nA palavra não tem nenhuma letra '%c'.\n", command[0]);
+    write(player->connfd, buffer, strlen(buffer));
+    bzero(buffer, sizeof(buffer));
   }
 }
 
-void run_game(){while(1);}
-
 int main(int argc, char **argv) {
     Player clientes[MAXCLIENTS];
-    Game *curr_game;
+    Game *curr_game, *open_mp_game;
     /* Variavies relativas a conexao com o cliente*/
     struct sockaddr_in servaddr, cliinfo;
     socklen_t cliinfo_len;
@@ -161,15 +193,13 @@ int main(int argc, char **argv) {
           maxfd = connfd;
         }
         total_clients++;
-        printf("Novo cliente conectado.\n");
+        printf("Created user %d\n", connfd);
       }
       
       for(int i = 0; i < total_clients; i++) {
         if (FD_ISSET(clientes[i].connfd, &active_set)) {
-          n = recv(clientes[i].connfd, buffer, sizeof(buffer), MSG_PEEK | MSG_DONTWAIT);
-          printf("%d bytes to be received from user (%s)\n", n, clientes[i].ip);
+          n = recv(clientes[i].connfd, buffer, sizeof(buffer), MSG_PEEK);
           if (n <= 0) {
-            printf("Closing connection for player (%s)\n", clientes[i].ip);
             recv(clientes[i].connfd, buffer, sizeof(buffer), MSG_DONTWAIT);
             close(clientes[i].connfd);
             FD_CLR(clientes[i].connfd, &read_set);
@@ -184,6 +214,26 @@ int main(int argc, char **argv) {
               case '1':
                 start_single_player_game(words, 2, &clientes[i]);
                 curr_game = clientes[i].game;
+                printf("Starting single player word '%s' for (%d, %s).\n", curr_game->word, i, clientes[i].ip);
+
+                word_size = strlen(curr_game->word);
+                write(clientes[i].connfd, &word_size, 1);
+                write(clientes[i].connfd, &clientes[i].lives, 1);
+                write(clientes[i].connfd, curr_game->guess_state, strlen(curr_game->guess_state));
+                break;
+              case '2':
+                start_single_player_game(words, 2, &clientes[i]);
+                curr_game = clientes[i].game;
+                printf("Starting single player word '%s' for (%s).\n", curr_game->word, clientes[i].ip);
+
+                word_size = strlen(curr_game->word);
+                write(clientes[i].connfd, &word_size, 1);
+                write(clientes[i].connfd, &clientes[i].lives, 1);
+                write(clientes[i].connfd, curr_game->guess_state, strlen(curr_game->guess_state));
+                break;
+              case '3':
+                start_single_player_game(words, 2, &clientes[i]);
+                curr_game = clientes[i].game;
                 printf("Starting single player word '%s' for (%s).\n", curr_game->word, clientes[i].ip);
 
                 word_size = strlen(curr_game->word);
@@ -194,8 +244,9 @@ int main(int argc, char **argv) {
             }
           } else if (clientes[i].state == PLAYER_INGAME_SP) {
             printf("Reading user guess\n");
+            bzero(buffer, sizeof(buffer));
             n = read(clientes[i].connfd, buffer, sizeof(buffer));
-            printf("Handling guess %s from player (%s) (%d bytes received)\n.", buffer, clientes[i].ip, n);
+            printf("Handling guess %s from player (%d, %s) (%d bytes received)\n.", buffer, i, clientes[i].ip, n);
             processa_tentativa(&clientes[i], buffer);
           }
         }

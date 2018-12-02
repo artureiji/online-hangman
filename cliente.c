@@ -36,21 +36,24 @@ void ask_executor_privileges(int connfd)
 void play_singleplayer(int connfd)
 {
     char buffer[100], line[255];
-    int n, vidas = 1, letras, letras_restantes;
+    int vidas = 1, letras, letras_restantes;
 
     // sends to server game mode identifier
     bzero(buffer, sizeof(buffer));
     snprintf(buffer, 2, "1");
     send(connfd, buffer, 1, 0);
 
-    // first byte sent by server is word length
-    read(connfd, buffer, 1);
-    letras = buffer[0];
-    letras_restantes = letras;
-    while (letras_restantes > 0 && vidas > 0) {
+    letras = 0;
+    do {
+        // first byte sent by server is word length
+        read(connfd, buffer, 1);
+        letras_restantes = buffer[0];
+        if (letras == 0) letras = letras_restantes;
+
         // second byte is lives count
         read(connfd, buffer, 1);
         vidas = buffer[0];
+
         printf("A partida de jogo da forca começou!\nVocê possui %d vidas.\nA palavra possui %d letras.\n\n", vidas, letras);
         
         bzero(line, sizeof(line));
@@ -61,26 +64,15 @@ void play_singleplayer(int connfd)
             strcat(line, buffer);
         }
         printf("%s", line);
+
+        if (letras_restantes <= 0 || vidas <= 0) {
+            break;
+        }
+
         printf("\nDigite seu palpite (letra ou palavra): ");
         scanf("%s", buffer);
         send(connfd, buffer, strlen(buffer), 0);
-        read(connfd, buffer, 1);
-        letras_restantes = buffer[0];
-    }
-
-    printf("Saiu com %d vidas e %d letras restantes\n", vidas, letras_restantes);
-
-    if (letras_restantes <= 0) {
-        // reads control bytes and show message from server.
-        read(connfd, buffer, 1);
-        n = read(connfd, buffer, sizeof(buffer));
-        buffer[n] = 0;
-        printf("%s", buffer);
-        while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) > 0) {
-            buffer[n] = 0;
-            printf("%s", buffer);
-        }
-    }
+    } while (1);
 
     printf("\n\n");
 }
