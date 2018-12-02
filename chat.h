@@ -9,6 +9,8 @@
         char *username;
         char **participants;
         int *connections;
+        int read_fd;
+        int read_port;
         int user_count;
         int chat_size;
     } Chat;

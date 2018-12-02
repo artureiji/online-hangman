@@ -20,7 +20,7 @@ void ask_executor_privileges(int connfd)
 {
     char command[100], buffer[100], line[255];
     bzero(command, sizeof(command));
-    snprintf(command, 100, "2");
+    snprintf(command, 2, "2");
     send(connfd, command, strlen(command), 0);
 
     bzero(line, sizeof(line));
@@ -30,7 +30,7 @@ void ask_executor_privileges(int connfd)
         strcat(line, buffer);
     }
 
-    printf("Linha recebida: %s\n", line);
+    printf("%s\n", line);
 }
 
 void play_singleplayer(int connfd)
