@@ -238,8 +238,12 @@ char **load_dictionary(int *word_count){
 
   file = fopen("dictionary.txt", "r");
   while ((read = getline(&line, &len, file)) != -1 && *word_count < 50) {
-      dict[(*word_count)] = malloc(255 * sizeof(char));
-      strcpy(dict[(*word_count)++], line);
+      dict[(*word_count)] = malloc((strlen(line) + 1) * sizeof(char));
+      strcpy(dict[(*word_count)], line);
+      if (dict[(*word_count)][read - 1] == '\n') {
+        dict[(*word_count)][read - 1] = 0;
+      }
+      (*word_count)++;
   }
 
   return dict;
