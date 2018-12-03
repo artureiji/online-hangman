@@ -303,6 +303,10 @@ int main(int argc, char **argv)
     fd_set active_set, read_set;
     time_t timer;
 
+    if (argc == 2) {
+      port = atoi(argv[1]);
+    }
+
     tv.tv_sec = 0;
     tv.tv_usec = 0;
 

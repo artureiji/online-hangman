@@ -148,21 +148,25 @@ void play_multiplayer(int connfd)
 }
 
 int main(int argc, char **argv) {
-    int connfd;
+    int connfd, port = 9000;
     char error[300], option;
     struct sockaddr_in servaddr;
 
-    if (argc != 2) {
+    if (argc < 2 || argc > 3) {
       strcpy(error, "uso: ");
       strcat(error, argv[0]);
-      strcat(error, " <IPaddress>");
+      strcat(error, " <IPaddress> [<Port>]");
       perror(error);
       exit(1);
    }
 
+   if (argc == 3) {
+       port = atoi(argv[2]);
+   }
+
     connfd = Socket(AF_INET, SOCK_STREAM, 0);
 
-    servaddr = ClientSockaddrIn(AF_INET, argv[1], 9000);
+    servaddr = ClientSockaddrIn(AF_INET, argv[1], port);
 
     Connect(connfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
 
