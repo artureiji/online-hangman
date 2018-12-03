@@ -92,39 +92,77 @@ void start_single_player_game(char** words, int word_count, Player *player)
 
 void start_multi_player_game(char **words, int word_count, Game *game)
 {
-  int available;
+  int available, word_size;
   char info_batch[MAXCLIENTS * 40], buff[50];
 
   bzero(info_batch, sizeof(info_batch));
+  switch (game->type) {
+    case MULTIPLAYER_LEADERLESS:
+      for (int i = 0; i < word_count && game->word == NULL; i++) {
+        printf("Checking availability of word %s\n", words[i]);
+        available = 1;
 
-  for (int i = 0; i < word_count && game->word == NULL; i++) {
-    printf("Checking availability of word %s\n", words[i]);
-    available = 1;
+        for (int p = 0; p < game->player_count; p++) {
+          for (int j = 0; j < game->players[p]->games_count; j++) {
+            printf("Comparing with word %s\n", game->players[p]->used_words[i]);
+            if (strcmp(words[i], game->players[p]->used_words[j]) == 0) {
+              available = 0;
+            }
+          }
+        }
 
-    for (int p = 0; p < game->player_count; p++){
-      for (int j = 0; j < game->players[p]->games_count; j++) {
-        printf("Comparing with word %s\n", game->players[p]->used_words[i]);
-        if (strcmp(words[i], game->players[p]->used_words[j]) == 0) {
-          available = 0;
+        if (available) {
+          game->word = malloc(sizeof(words[i]));
+          strcpy(game->word, words[i]);
         }
       }
-    }
+      bzero(buff, sizeof(buff));
+      sprintf(buff, "0 ");
+      break;
+    case MULTIPLAYER:
+      bzero(buff, sizeof(buff));
+      sprintf(buff, "%d ", game->player_count);
+      write(game->hangman->connfd, buff, strlen(buff));
+      printf("sending to hangman: |%s|\n", buff);
+      for (int p = 0; p < game->player_count; p++) {
+        bzero(buff, sizeof(buff));
+        sprintf(buff, "%s %s %d ", game->players[p]->ip, game->players[p]->name, game->players[p]->udp_port);
+        printf("sending to hangman: |%s|\n", buff);
+        write(game->hangman->connfd, buff, strlen(buff));
+      }
 
-    if (available) {
-      game->word = malloc(sizeof(words[i]));
-      strcpy(game->word, words[i]);
-    }
+      read(game->hangman->connfd, game->word, MAXWORDSIZE);
+
+      bzero(buff, sizeof(buff));
+      sprintf(buff, "1 %s %s %d", game->hangman->ip, game->hangman->name, game->hangman->udp_port);
+      break;
+    default:
+      return;
+  }
+  
+  game->hits = 0;
+  game->guess_count = 0;
+  for (int i = 0; i < strlen(game->word); i++) {
+    game->guess_state[2 * i] = '_';
+    game->guess_state[2 * i + 1] = ' ';
   }
 
-  for (int p = 0; p < game->player_count; p++){
-    sprintf(buff, "%s %s %d ", game->players[p]->ip, game->players[p]->name, game->players[p]->udp_port);
-    strcat(info_batch, buff);
-  }
+  for (int i = 0; i < game->player_count; i++) {
+    strcpy(game->players[i]->used_words[game->players[i]->games_count], game->word);
+    game->players[i]->games_count++;
 
-  for (int p = 0; p < game->player_count; p++){
-    write(game->players[p]->connfd, info_batch, strlen(info_batch));
-  }
+    game->players[i]->lives = 3;
+    game->players[i]->misses = 0;
 
+    write(game->players[i]->connfd, buff, strlen(buff));
+    
+    printf("Starting single player word '%s' for (%d, %s).\n", game->word, game->players[i]->connfd, game->players[i]->ip);
+
+    word_size = strlen(game->word);
+    write(game->players[i]->connfd, &word_size, 1);
+    write(game->players[i]->connfd, &game->players[i]->lives, 1);
+    write(game->players[i]->connfd, game->guess_state, strlen(game->guess_state));
+  }
 }
 
 void processa_tentativa(Player *player, char *command)
@@ -209,7 +247,8 @@ void destroy_user(Player *player)
   }
 }
 
-Game* create_mp_game() {
+Game* create_mp_game()
+{
   Game *game;
   game = malloc(sizeof(Game));
   game->word = NULL;
@@ -220,7 +259,8 @@ Game* create_mp_game() {
   return game;
 }
 
-char **load_dictionary(int *word_count){
+char **load_dictionary(int *word_count)
+{
   char **dict;
   char *line;
   size_t len = 0;
@@ -249,7 +289,8 @@ char **load_dictionary(int *word_count){
   return dict;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     Player *clientes[FD_SETSIZE];
     Game *curr_game, *open_mp_game;
     struct sockaddr_in servaddr, cliinfo;
@@ -257,7 +298,7 @@ int main(int argc, char **argv) {
     socklen_t cliinfo_len;
     int word_size, maxfd, listenfd, connfd, option=1, port=9000;
     int n, word_count, curr_fd, total_clients, lobby_size;
-    char buffer[MAXDATASIZE];
+    char buffer[MAXDATASIZE], *slice;
     char **words = load_dictionary(&word_count);
     fd_set active_set, read_set;
     time_t timer;
@@ -283,7 +324,7 @@ int main(int argc, char **argv) {
     open_mp_game = NULL;
 
     printf("Booting server.\n");
-    while(1){
+    while(1) {
 
       if (open_mp_game == NULL) {
         printf("Opening new multiplayer game\n");
@@ -292,11 +333,11 @@ int main(int argc, char **argv) {
         timer = clock();
       }
 
-      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > TIMELIMITMP || lobby_size >= 2)) {
-        if (lobby_size > 1) {
-          printf("Current multiplayer game starting with players(%d):\n", open_mp_game->player_count);
-          for(int p; p < open_mp_game->player_count; p++){
-            printf(" - %s\n", open_mp_game->players[p]->name);
+      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > TIMELIMITMP || lobby_size >= 9)) {
+        if (lobby_size > 2) {
+          printf("Current multiplayer game starting with %d players:\n", open_mp_game->player_count);
+          for(int p = 0; p < open_mp_game->player_count; p++){
+            printf("%d - %s\n", open_mp_game->players[p]->connfd, open_mp_game->players[p]->name);
           }
           printf("\n");
           start_multi_player_game(words, word_count, open_mp_game);
@@ -380,7 +421,7 @@ int main(int argc, char **argv) {
                       } else {
                         open_mp_game->type = MULTIPLAYER;
                       }
-                    }else{
+                    } else {
                       open_mp_game->players[open_mp_game->player_count] = clientes[curr_fd];
                       open_mp_game->player_count++;
                     }
@@ -390,24 +431,23 @@ int main(int argc, char **argv) {
                     lobby_size++;
 
                     strtok(buffer, " ");
-                    clientes[curr_fd]->name = strtok(NULL, " ");
+                    slice = strtok(NULL, " ");
+                    clientes[curr_fd]->name = malloc((strlen(slice) + 1) * sizeof(char));
+                    strcpy(clientes[curr_fd]->name, slice);
                     clientes[curr_fd]->udp_port = atoi(strtok(NULL, " "));
                     printf("Player %s (udp %d) joinned the MP game\n", clientes[curr_fd]->name,clientes[curr_fd]->udp_port);
 
                     break;
                 }
                 break;
-              case PLAYER_INGAME_SP:
-                printf("Reading user guess\n");
-                bzero(buffer, sizeof(buffer));
-                n = read(curr_fd, buffer, sizeof(buffer));
-                printf("Handling guess %s from player (%d, %s) (%d bytes received)\n", buffer, curr_fd, clientes[curr_fd]->ip, n);
-                processa_tentativa(clientes[curr_fd], buffer);
-                break;
               case PLAYER_INGAME_MP:
                 if (clientes[curr_fd]->game->word == NULL) {
                   continue;
                 }
+                if (clientes[curr_fd]->game->hangman != NULL && clientes[curr_fd]->game->hangman->connfd == curr_fd) {
+                  continue;
+                }
+              case PLAYER_INGAME_SP:
                 printf("Reading user guess\n");
                 bzero(buffer, sizeof(buffer));
                 n = read(curr_fd, buffer, sizeof(buffer));

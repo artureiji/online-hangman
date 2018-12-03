@@ -96,20 +96,17 @@ void play_multiplayer(int connfd)
 
     printf("Aguardando inicio da partida...\n");
     bzero(buffer, sizeof(buffer));
-    bzero(line, sizeof(line));
     read(connfd, buffer, sizeof(buffer));
-    strcpy(line, buffer);
-    while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
-        strcat(line, buffer);
-    }
-
-    user_count = atoi(strtok(line, " "));
+    user_count = atoi(buffer);
     printf("Chatting with %d user.\n", user_count);
     for (i = 0; i < user_count; i++) {
+        bzero(buffer, sizeof(buffer));
+        read(connfd, buffer, sizeof(buffer));
+        ip = strtok(buffer, " ");
         name = strtok(NULL, " ");
         port = strtok(NULL, " ");
+        printf("Chatting with %s (%s:%s).\n", name, ip, port);
         chat_add_user(game_chat, name, ip, atoi(port));
-        ip = strtok(NULL, " ");
     }
 
     letras = 0;
