@@ -46,4 +46,4 @@ Pode exigir liberação de portas pelo firewall.
 
 # Licença
 
-Este projeto está sob a licença MIT - veja LICENSE.md para mais detalhes.
+Este projeto está sob a licença MIT.
