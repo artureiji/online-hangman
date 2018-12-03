@@ -41,7 +41,7 @@ Pode exigir liberação de portas pelo firewall.
 
 # Autores
 
- - **Artur Eiji**
+ - **Artur Eiji Suguinoshita Aciole**
  - **Samuel Chenatti**
 
 # Licença
