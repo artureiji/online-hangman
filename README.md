@@ -41,9 +41,9 @@ Pode exigir liberação de portas pelo firewall.
 
 # Autores
 
- - **Artur Eiji**
+ - **Artur Eiji Suguinoshita Aciole**
  - **Samuel Chenatti**
 
 # Licença
 
-Este projeto está sob a licença MIT - veja LICENSE.md para mais detalhes.
+Este projeto está sob a licença MIT.
