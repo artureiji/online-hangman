@@ -7,7 +7,8 @@
 
 #define MAX_PLAYERS 10
 
-void printIntro() {
+void printIntro()
+{
   printf("Bem vindo ao jogo da forca!\n");
   printf("-----\n\n");
   printf("1) Iniciar partida simples\n");
@@ -82,7 +83,7 @@ void play_multiplayer(int connfd)
     Chat game_chat;
     char buffer[100], line[255];
     char * name, * ip, * port;
-    int i, user_count;
+    int i, user_count, letras, letras_restantes, vidas;
 
     printf("Digite o seu nome:");
     scanf(" %s", buffer);
@@ -94,23 +95,55 @@ void play_multiplayer(int connfd)
     send(connfd, buffer, strlen(buffer), 0);
 
     printf("Aguardando inicio da partida...\n");
-    read(connfd, buffer, 1);
-    printf("info batch: %s", buffer);
-    buffer[1] = 0;
-    user_count = atoi(buffer);
-
+    bzero(buffer, sizeof(buffer));
     bzero(line, sizeof(line));
+    read(connfd, buffer, sizeof(buffer));
+    strcpy(line, buffer);
     while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
         strcat(line, buffer);
     }
 
-    ip = strtok(line, " ");
+    user_count = atoi(strtok(line, " "));
+    printf("Chatting with %d user.\n", user_count);
     for (i = 0; i < user_count; i++) {
         name = strtok(NULL, " ");
         port = strtok(NULL, " ");
         chat_add_user(game_chat, name, ip, atoi(port));
         ip = strtok(NULL, " ");
     }
+
+    letras = 0;
+    do {
+        // first byte sent by server is word length
+        read(connfd, buffer, 1);
+        letras_restantes = buffer[0];
+        if (letras == 0) letras = letras_restantes;
+
+        // second byte is lives count
+        read(connfd, buffer, 1);
+        vidas = buffer[0];
+
+        printf("A partida de jogo da forca começou!\nVocê possui %d vidas.\nA palavra possui %d letras.\n\n", vidas, letras);
+
+        bzero(line, sizeof(line));
+        // remainder of stream is message from server, including word with guesses hits.
+        recv(connfd, buffer, sizeof(buffer), 0);
+        strcat(line, buffer);
+        while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
+            strcat(line, buffer);
+        }
+        printf("%s", line);
+
+        if (letras_restantes <= 0 || vidas <= 0) {
+            break;
+        }
+
+        printf("\nDigite seu palpite (letra ou palavra): ");
+        scanf("%s", buffer);
+        send(connfd, buffer, strlen(buffer), 0);
+    } while (1);
+
+    printf("\n\n");
 
     printf("Fim de jogo!\n");
 }
