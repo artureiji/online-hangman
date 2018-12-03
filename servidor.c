@@ -10,7 +10,7 @@
 #define MAXCLIENTS 255
 #define MAX_PLAYERS 9
 #define MAXPLAYS 10
-#define TIMELIMITMP 2.0
+#define TIMELIMITMP 30.0
 
 struct Player;
 
@@ -21,6 +21,7 @@ typedef struct Game {
   int guess_count;
   int hits;
   struct Player* hangman;
+  struct Player* winner;
   struct Player* players[MAX_PLAYERS];
   int player_count;
 } Game;
@@ -57,25 +58,30 @@ void start_single_player_game(char** words, int word_count, Player *player)
   Game *game = malloc(sizeof(Game));
 
   game->word = NULL;
+  printf("User played %d gamesm checking %d words.\n", player->games_count, word_count);
   for (i = 0; i < word_count && game->word == NULL; i++) {
-    printf("Checking availability of word %s\n", words[i]);
+    printf("Checking availability of word #%d ", i);
+    printf("%s\n", words[i]);
     available = 1;
-    for (j = 0; j < player->games_count; j++) {
-      printf("Comparing with word %s\n", player->used_words[i]);
+    for (j = 0; j < player->games_count && available; j++) {
+      printf("Comparing with word %s\n", player->used_words[j]);
       if (strcmp(words[i], player->used_words[j]) == 0) {
         available = 0;
       }
+      printf("Compared with word %s\n", player->used_words[j]);
     }
     if (available) {
-      game->word = malloc(sizeof(words[i]));
+      game->word = malloc((strlen(words[i]) + 1) * sizeof(char));
       strcpy(game->word, words[i]);
     }
   }
 
   game->type = SINGLE_PLAYER;
+  game->winner = NULL;
   game->hangman = NULL;
   game->hits = 0;
   game->guess_count = 0;
+  bzero(game->guess_state, sizeof(game->guess_state));
   for (i = 0; i < strlen(game->word); i++) {
     game->guess_state[2 * i] = '_';
     game->guess_state[2 * i + 1] = ' ';
@@ -200,6 +206,9 @@ void processa_tentativa(Player *player, char *command)
     } else {
       if (strcasecmp(command, player->game->word) == 0) {
         player->game->hits = strlen(player->game->word);
+        for (i = 0; i < strlen(player->game->word); i++) {
+            player->game->guess_state[2 * i] = toupper(player->game->word[i]);
+        }
       } else {
         player->lives = 0;
         player->misses++;
@@ -213,11 +222,18 @@ void processa_tentativa(Player *player, char *command)
   write(player->connfd, player->game->guess_state, strlen(player->game->guess_state));
 
   if (tiles_left <= 0) {
-      snprintf(buffer, sizeof(buffer), "\nParabéns %s ,você adivinhou a palavra '%s'.\n", player->name, player->game->word);
-      write(player->connfd, buffer, strlen(buffer));
-      bzero(buffer, sizeof(buffer));
+    bzero(buffer, sizeof(buffer));
+    if (player->game->winner == NULL) {
+        player->game->winner = player;
+    }
+    if (player->game->winner->name != NULL) {
+      snprintf(buffer, sizeof(buffer), "\nParabéns %s, você adivinhou a palavra '%s'.\n", player->game->winner->name, player->game->word);
+    } else {
+      snprintf(buffer, sizeof(buffer), "\nParabéns, você adivinhou a palavra '%s'.\n", player->game->word);
+    }
+    write(player->connfd, buffer, strlen(buffer));
 
-      player->state = PLAYER_ON_LOBBY;
+    player->state = PLAYER_ON_LOBBY;
   } else if (player->lives <= 0) {
       bzero(buffer, sizeof(buffer));
       snprintf(buffer, sizeof(buffer), "\nForca!, você fez %d tentativas incorretas...\n", player->misses);
@@ -253,6 +269,7 @@ Game* create_mp_game()
   game = malloc(sizeof(Game));
   game->word = NULL;
   game->type = MULTIPLAYER_LEADERLESS;
+  game->winner = NULL;
   game->hangman = NULL;
   game->player_count = 0;
 
@@ -283,6 +300,7 @@ char **load_dictionary(int *word_count)
       if (dict[(*word_count)][read - 1] == '\n') {
         dict[(*word_count)][read - 1] = 0;
       }
+      printf("Loaded word #%d %s.\n", (*word_count), dict[(*word_count)]);
       (*word_count)++;
   }
 
@@ -299,9 +317,10 @@ int main(int argc, char **argv)
     int word_size, maxfd, listenfd, connfd, option=1, port=9000;
     int n, word_count, curr_fd, total_clients, lobby_size;
     char buffer[MAXDATASIZE], *slice;
-    char **words = load_dictionary(&word_count);
+    char **words;
     fd_set active_set, read_set;
     time_t timer;
+    words = load_dictionary(&word_count);
 
     if (argc == 2) {
       port = atoi(argv[1]);
@@ -338,7 +357,7 @@ int main(int argc, char **argv)
       }
 
       if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > TIMELIMITMP || lobby_size >= 9)) {
-        if (lobby_size > 2) {
+        if (lobby_size > 1) {
           printf("Current multiplayer game starting with %d players:\n", open_mp_game->player_count);
           for(int p = 0; p < open_mp_game->player_count; p++){
             printf("%d - %s\n", open_mp_game->players[p]->connfd, open_mp_game->players[p]->name);
@@ -395,7 +414,7 @@ int main(int argc, char **argv)
                 printf("Cliente (%s) chose mode %s (%d bytes received)\n", clientes[curr_fd]->ip, buffer, n);
                 switch (buffer[0]) {
                   case '1':
-                    start_single_player_game(words, 2, clientes[curr_fd]);
+                    start_single_player_game(words, word_count, clientes[curr_fd]);
                     curr_game = clientes[curr_fd]->game;
                     printf("Starting single player word '%s' for (%d, %s).\n", curr_game->word, curr_fd, clientes[curr_fd]->ip);
 
