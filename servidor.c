@@ -219,22 +219,22 @@ void processa_tentativa(Player *player, char *command)
 
       player->state = PLAYER_ON_LOBBY;
   } else if (player->lives <= 0) {
+      bzero(buffer, sizeof(buffer));
       snprintf(buffer, sizeof(buffer), "\nForca!, você fez %d tentativas incorretas...\n", player->misses);
       write(player->connfd, buffer, strlen(buffer));
       bzero(buffer, sizeof(buffer));
       snprintf(buffer, sizeof(buffer), "\nA palavra correta era '%s', você perdeu!\n", player->game->word);
       write(player->connfd, buffer, strlen(buffer));
-      bzero(buffer, sizeof(buffer));
 
       player->state = PLAYER_ON_LOBBY;
   } else if (!new_guess) {
+    bzero(buffer, sizeof(buffer));
     snprintf(buffer, sizeof(buffer), "\nA letra '%c' já foi utilizada.\n", command[0]);
     write(player->connfd, buffer, strlen(buffer));
-    bzero(buffer, sizeof(buffer));
   } else if (guess_hits <= 0) {
+    bzero(buffer, sizeof(buffer));
     snprintf(buffer, sizeof(buffer), "\nA palavra não tem nenhuma letra '%c'.\n", command[0]);
     write(player->connfd, buffer, strlen(buffer));
-    bzero(buffer, sizeof(buffer));
   }
 }
 

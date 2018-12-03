@@ -19,16 +19,18 @@ void printIntro()
 
 void ask_executor_privileges(int connfd)
 {
-    char command[100], buffer[100], line[255];
-    bzero(command, sizeof(command));
-    snprintf(command, 2, "2");
-    send(connfd, command, strlen(command), 0);
+    char buffer[100], line[255];
+    bzero(buffer, sizeof(buffer));
+    snprintf(buffer, 2, "2");
+    send(connfd, buffer, strlen(buffer), 0);
 
     bzero(line, sizeof(line));
+    bzero(buffer, sizeof(buffer));
     recv(connfd, buffer, sizeof(buffer), 0);
     strcat(line, buffer);
     while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
         strcat(line, buffer);
+        bzero(buffer, sizeof(buffer));
     }
 
     printf("%s\n", line);
@@ -42,7 +44,7 @@ void play_singleplayer(int connfd)
     // sends to server game mode identifier
     bzero(buffer, sizeof(buffer));
     snprintf(buffer, 2, "1");
-    send(connfd, buffer, 1, 0);
+    send(connfd, buffer, strlen(buffer), 0);
 
     letras = 0;
     do {
@@ -58,11 +60,11 @@ void play_singleplayer(int connfd)
         printf("A partida de jogo da forca começou!\nVocê possui %d vidas.\nA palavra possui %d letras.\n\n", vidas, letras);
 
         bzero(line, sizeof(line));
+        bzero(buffer, sizeof(buffer));
         // remainder of stream is message from server, including word with guesses hits.
-        recv(connfd, buffer, sizeof(buffer), 0);
-        strcat(line, buffer);
         while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
             strcat(line, buffer);
+            bzero(buffer, sizeof(buffer));
         }
         printf("%s", line);
 
