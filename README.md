@@ -1,7 +1,5 @@
 # HangMan Evolution™ Multiplayer Online
 
-Pojeto final da disciplina MC833. Desenvolvido _orgulhosamente_ por Samuel e Artur Eiji.
-
 Implementação do jogo da forca através de uma arquitetura cliente servidor. O jogo pode tanto ser jogado em modo singleplayer quanto multiplayer.
 
 # Começando
