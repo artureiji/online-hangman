@@ -55,7 +55,7 @@ void play_singleplayer(int connfd)
         vidas = buffer[0];
 
         printf("A partida de jogo da forca começou!\nVocê possui %d vidas.\nA palavra possui %d letras.\n\n", vidas, letras);
-        
+
         bzero(line, sizeof(line));
         // remainder of stream is message from server, including word with guesses hits.
         recv(connfd, buffer, sizeof(buffer), 0);
@@ -90,11 +90,12 @@ void play_multiplayer(int connfd)
 
     // sends to server this client chat identificaion.
     bzero(buffer, sizeof(buffer));
-    snprintf(buffer, 100, "3\n%s\n%d\n", game_chat.username, game_chat.read_port);
+    snprintf(buffer, 100, "3 %s %d\n", game_chat.username, game_chat.read_port);
     send(connfd, buffer, strlen(buffer), 0);
 
-    printf("Aguardando inicio da partida...");
+    printf("Aguardando inicio da partida...\n");
     read(connfd, buffer, 1);
+    printf("info batch: %s", buffer);
     buffer[1] = 0;
     user_count = atoi(buffer);
 
@@ -102,7 +103,7 @@ void play_multiplayer(int connfd)
     while (recv(connfd, buffer, sizeof(buffer), MSG_DONTWAIT) >= 0) {
         strcat(line, buffer);
     }
-    
+
     ip = strtok(line, " ");
     for (i = 0; i < user_count; i++) {
         name = strtok(NULL, " ");

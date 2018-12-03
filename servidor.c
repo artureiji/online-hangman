@@ -10,6 +10,7 @@
 #define MAXCLIENTS 255
 #define MAX_PLAYERS 9
 #define MAXPLAYS 10
+#define TIMELIMITMP 2.0
 
 struct Player;
 
@@ -89,8 +90,41 @@ void start_single_player_game(char** words, int word_count, Player *player)
   player->misses = 0;
 }
 
-void start_multi_player_game()
+void start_multi_player_game(char **words, int word_count, Game *game)
 {
+  int available;
+  char info_batch[MAXCLIENTS * 40], buff[50];
+
+  bzero(info_batch, sizeof(info_batch));
+
+  for (int i = 0; i < word_count && game->word == NULL; i++) {
+    printf("Checking availability of word %s\n", words[i]);
+    available = 1;
+
+    for (int p = 0; p < game->player_count; p++){
+      for (int j = 0; j < game->players[p]->games_count; j++) {
+        printf("Comparing with word %s\n", game->players[p]->used_words[i]);
+        if (strcmp(words[i], game->players[p]->used_words[j]) == 0) {
+          available = 0;
+        }
+      }
+    }
+
+    if (available) {
+      game->word = malloc(sizeof(words[i]));
+      strcpy(game->word, words[i]);
+    }
+  }
+
+  for (int p = 0; p < game->player_count; p++){
+    sprintf(buff, "%s %s %d ", game->players[p]->ip, game->players[p]->name, game->players[p]->udp_port);
+    strcat(info_batch, buff);
+  }
+
+  for (int p = 0; p < game->player_count; p++){
+    write(game->players[p]->connfd, info_batch, strlen(info_batch));
+  }
+
 }
 
 void processa_tentativa(Player *player, char *command)
@@ -186,25 +220,26 @@ Game* create_mp_game() {
   return game;
 }
 
-char **load_dictionary(){
+char **load_dictionary(int *word_count){
   char **dict;
   char *line;
-  int word_count;
   size_t len = 0;
   ssize_t read;
   FILE *file;
   file = fopen("dictionary.txt", "r");
-  while ((read = getline(&line, &len, file)) != -1) word_count++;
 
-  dict = malloc(word_count * sizeof(char*));
+  (*word_count) = 0;
 
-  word_count = 0;
-  
+  while ((read = getline(&line, &len, file)) != -1) (*word_count)++;
+
+  dict = malloc((*word_count) * sizeof(char*));
+
+  (*word_count) = 0;
+
   file = fopen("dictionary.txt", "r");
-  while ((read = getline(&line, &len, file)) != -1 && word_count < 50) {
-      dict[word_count] = malloc(255 * sizeof(char));
-      strcpy(dict[word_count++], line);
-      printf("Dicts: %s\n", dict[0]);
+  while ((read = getline(&line, &len, file)) != -1 && *word_count < 50) {
+      dict[(*word_count)] = malloc(255 * sizeof(char));
+      strcpy(dict[(*word_count)++], line);
   }
 
   return dict;
@@ -217,14 +252,11 @@ int main(int argc, char **argv) {
     struct timeval tv;
     socklen_t cliinfo_len;
     int word_size, maxfd, listenfd, connfd, option=1, port=9000;
-    int n, curr_fd, total_clients, lobby_size;
+    int n, word_count, curr_fd, total_clients, lobby_size;
     char buffer[MAXDATASIZE];
-    char **words = load_dictionary();
-    printf("Words: %s\n", words[0]);
+    char **words = load_dictionary(&word_count);
     fd_set active_set, read_set;
     time_t timer;
-
-    load_dictionary();
 
     tv.tv_sec = 0;
     tv.tv_usec = 0;
@@ -256,10 +288,14 @@ int main(int argc, char **argv) {
         timer = clock();
       }
 
-      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > 20.0 || lobby_size >= 2)) {
+      if(open_mp_game != NULL && (((clock() - timer)/CLOCKS_PER_SEC) > TIMELIMITMP || lobby_size >= 2)) {
         if (lobby_size > 1) {
-          printf("Current multiplayer game starting.\n");
-          start_multi_player_game();
+          printf("Current multiplayer game starting with players(%d):\n", open_mp_game->player_count);
+          for(int p; p < open_mp_game->player_count; p++){
+            printf(" - %s\n", open_mp_game->players[p]->name);
+          }
+          printf("\n");
+          start_multi_player_game(words, word_count, open_mp_game);
 
           open_mp_game = NULL;
         }
@@ -267,7 +303,11 @@ int main(int argc, char **argv) {
         timer = clock();
       }
 
-      if( (clock() - timer)/CLOCKS_PER_SEC > 10 ) timer = clock();
+      if( (clock() - timer)/CLOCKS_PER_SEC > TIMELIMITMP ){
+        printf("Not enough players, resetting timer\n");
+        timer = clock();
+      }
+
 
       active_set = read_set;
       select(maxfd + 1, &active_set, NULL, NULL, &tv);
@@ -332,13 +372,24 @@ int main(int argc, char **argv) {
                       if (curr_fd != ((Player *) open_mp_game->hangman)->connfd) {
                         open_mp_game->players[open_mp_game->player_count] = clientes[curr_fd];
                         open_mp_game->player_count++;
+                        printf("New player!\n");
                       } else {
                         open_mp_game->type = MULTIPLAYER;
                       }
+                    }else{
+                      open_mp_game->players[open_mp_game->player_count] = clientes[curr_fd];
+                      open_mp_game->player_count++;
                     }
+
                     clientes[curr_fd]->game = open_mp_game;
                     clientes[curr_fd]->state = PLAYER_INGAME_MP;
                     lobby_size++;
+
+                    strtok(buffer, " ");
+                    clientes[curr_fd]->name = strtok(NULL, " ");
+                    clientes[curr_fd]->udp_port = atoi(strtok(NULL, " "));
+                    printf("Player %s (udp %d) joinned the MP game\n", clientes[curr_fd]->name,clientes[curr_fd]->udp_port);
+
                     break;
                 }
                 break;
